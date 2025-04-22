@@ -1,0 +1,73 @@
+x-echoscribe-build: &echoscribe-build
+  args:
+    WHISPER_MODEL: ${WHISPER_MODEL}
+
+x-echoscribe-env: &echoscribe-env
+  environment:
+    - REDIS_HOST=${REDIS_HOST}
+    - REDIS_PORT=${REDIS_PORT}
+    - REDIS_DB=${REDIS_DB}
+    - WHISPER_MODEL=${WHISPER_MODEL}
+    - DOCKER_ENV=true
+    - TZ=Asia/Shanghai
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      <<: *echoscribe-build
+    ports:
+      - "8000:8000"
+    volumes:
+      - type: bind
+        source: ./backend
+        target: /backend
+      - type: volume
+        source: uploads
+        target: /backend/app/uploads
+    <<: *echoscribe-env
+    depends_on:
+      - redis
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      <<: *echoscribe-build
+    volumes:
+      - type: bind
+        source: ./backend
+        target: /backend
+      - type: volume
+        source: uploads
+        target: /backend/app/uploads
+    <<: *echoscribe-env
+    depends_on:
+      - redis
+    command: python -m dramatiq app.tasks -p 1 -t 1
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
+  uploads:
